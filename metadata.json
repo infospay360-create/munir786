@@ -1,0 +1,6 @@
+{
+  "name": "SPAY360 FinTech & MLM Platform",
+  "description": "Ultra HD FinTech, MLM, Utility Services, E-Wallet, Shopping, and Franchise Management Platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
