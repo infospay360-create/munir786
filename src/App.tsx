@@ -31,6 +31,7 @@ import { SupportTicketView } from './components/views/SupportTicketView';
 import { ReportsView } from './components/views/ReportsView';
 import { SettingsView } from './components/views/SettingsView';
 import { AdminPanelView } from './components/views/AdminPanelView';
+import { FranchisePortalView } from './components/franchise/FranchisePortalView';
 
 import {
   LayoutDashboard,
@@ -99,6 +100,8 @@ const DashboardContent: React.FC = () => {
         return <TeamView />;
       case 'repurchase_mall':
         return <RepurchaseMallView />;
+      case 'franchise_portal':
+        return <FranchisePortalView />;
       case 'packages':
         return <PackagesView />;
       case 'support_ticket':

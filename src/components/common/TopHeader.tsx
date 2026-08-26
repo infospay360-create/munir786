@@ -104,6 +104,16 @@ export const TopHeader: React.FC = () => {
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
 
+        {/* Quick Franchise Portal Switcher */}
+        <button
+          onClick={() => setActiveTab('franchise_portal')}
+          className="hidden md:flex h-10 items-center space-x-1.5 rounded-xl border border-amber-300/80 bg-amber-50/70 px-3 text-xs font-bold text-amber-800 hover:bg-amber-100 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/50 shadow-xs transition cursor-pointer"
+          title="Open Regional Franchise Portal"
+        >
+          <Building className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+          <span>Franchise Portal</span>
+        </button>
+
         {/* Language Selector */}
         <div className="relative">
           <button

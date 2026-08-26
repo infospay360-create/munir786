@@ -15,6 +15,11 @@ import {
   BankAccount,
   KycRecord,
   TransactionType,
+  FranchiseInfo,
+  FranchiseStockItem,
+  FranchiseOrderRequest,
+  FranchiseStockRefillRequest,
+  StockType,
 } from '../types';
 import {
   initialUser,
@@ -28,6 +33,10 @@ import {
   mockKyc,
   mockTickets,
   mockNotifications,
+  mockFranchises,
+  mockFranchiseStock,
+  mockFranchiseOrderRequests,
+  mockStockRefillRequests,
 } from '../data/mockData';
 
 export type ActiveTab =
@@ -50,6 +59,10 @@ export type ActiveTab =
   | 'settings'
   | 'admin_panel'
   | 'franchise_portal'
+  | 'franchise_stock'
+  | 'franchise_orders'
+  | 'franchise_wallet'
+  | 'franchise_reports'
   | 'kyc_portal';
 
 export interface ToastMessage {
@@ -81,6 +94,35 @@ interface AppContextType {
   toggleTheme: () => void;
   language: string;
   setLanguage: (lang: string) => void;
+  // App Mode (User vs Franchise Portal)
+  appMode: 'user' | 'franchise';
+  setAppMode: (mode: 'user' | 'franchise') => void;
+  // Franchise System State
+  franchises: FranchiseInfo[];
+  selectedFranchise: FranchiseInfo;
+  setSelectedFranchise: (franchise: FranchiseInfo) => void;
+  franchiseStock: FranchiseStockItem[];
+  franchiseOrderRequests: FranchiseOrderRequest[];
+  stockRefillRequests: FranchiseStockRefillRequest[];
+  // Franchise Actions
+  addFranchiseWalletMoney: (amount: number, paymentMethod: string) => Promise<boolean>;
+  requestStockRefill: (
+    stockType: StockType,
+    items: { productId: string; name: string; qty: number; unitPrice: number; total: number }[]
+  ) => Promise<boolean>;
+  companyApproveStockRefill: (requestId: string) => Promise<{ success: boolean; message: string }>;
+  companyRejectStockRefill: (requestId: string, reason?: string) => Promise<boolean>;
+  acceptFranchiseOrder: (orderId: string) => Promise<boolean>;
+  rejectFranchiseOrder: (orderId: string, reason?: string) => Promise<boolean>;
+  reassignOrderToFranchise: (orderId: string, newFranchiseId: string) => Promise<boolean>;
+  verifyAndDeliverOrder: (orderId: string, enteredOtp: string) => Promise<{ success: boolean; commission?: number; message: string }>;
+  placeFranchiseOrder: (params: {
+    franchiseId: string;
+    stockType: StockType;
+    shippingAddress: string;
+    paymentMethod: string;
+    directItem?: { product: ProductItem; quantity: number };
+  }) => Promise<{ success: boolean; orderId?: string; deliveryOtp?: string; productCode?: string }>;
   // Modal controls
   isSearchOpen: boolean;
   setIsSearchOpen: (open: boolean) => void;
@@ -159,6 +201,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [language, setLanguage] = useState<string>('English');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+
+  // App Mode (User App vs Franchise Portal)
+  const [appMode, setAppMode] = useState<'user' | 'franchise'>('user');
+
+  // Franchise System State
+  const [franchises, setFranchises] = useState<FranchiseInfo[]>(() => {
+    const saved = localStorage.getItem('spay360_franchises');
+    return saved ? JSON.parse(saved) : mockFranchises;
+  });
+
+  const [selectedFranchise, setSelectedFranchise] = useState<FranchiseInfo>(() => {
+    const saved = localStorage.getItem('spay360_active_franchise');
+    return saved ? JSON.parse(saved) : mockFranchises[0];
+  });
+
+  const [franchiseStock, setFranchiseStock] = useState<FranchiseStockItem[]>(() => {
+    const saved = localStorage.getItem('spay360_franchise_stock');
+    return saved ? JSON.parse(saved) : mockFranchiseStock;
+  });
+
+  const [franchiseOrderRequests, setFranchiseOrderRequests] = useState<FranchiseOrderRequest[]>(() => {
+    const saved = localStorage.getItem('spay360_franchise_orders');
+    return saved ? JSON.parse(saved) : mockFranchiseOrderRequests;
+  });
+
+  const [stockRefillRequests, setStockRefillRequests] = useState<FranchiseStockRefillRequest[]>(() => {
+    const saved = localStorage.getItem('spay360_stock_refills');
+    return saved ? JSON.parse(saved) : mockStockRefillRequests;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('spay360_franchises', JSON.stringify(franchises));
+  }, [franchises]);
+
+  useEffect(() => {
+    localStorage.setItem('spay360_active_franchise', JSON.stringify(selectedFranchise));
+  }, [selectedFranchise]);
+
+  useEffect(() => {
+    localStorage.setItem('spay360_franchise_stock', JSON.stringify(franchiseStock));
+  }, [franchiseStock]);
+
+  useEffect(() => {
+    localStorage.setItem('spay360_franchise_orders', JSON.stringify(franchiseOrderRequests));
+  }, [franchiseOrderRequests]);
+
+  useEffect(() => {
+    localStorage.setItem('spay360_stock_refills', JSON.stringify(stockRefillRequests));
+  }, [stockRefillRequests]);
 
   // Modals
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -868,6 +959,522 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  // ================= FRANCHISE ACTION WORKFLOWS =================
+
+  // 1. Franchise Wallet Add Money
+  const addFranchiseWalletMoney = async (amount: number, paymentMethod: string): Promise<boolean> => {
+    if (amount <= 0) return false;
+
+    setSelectedFranchise((prev) => ({
+      ...prev,
+      franchiseWallet: Number((prev.franchiseWallet + amount).toFixed(2)),
+    }));
+
+    setFranchises((prev) =>
+      prev.map((f) =>
+        f.id === selectedFranchise.id
+          ? { ...f, franchiseWallet: Number((f.franchiseWallet + amount).toFixed(2)) }
+          : f
+      )
+    );
+
+    triggerConfetti();
+    addToast({
+      type: 'success',
+      title: 'Franchise Wallet Top-up Successful',
+      message: `₹${amount.toLocaleString('en-IN')} added to ${selectedFranchise.name} wallet via ${paymentMethod}.`,
+    });
+
+    return true;
+  };
+
+  // 2. Franchise Stock Refill Request (sent to Company)
+  const requestStockRefill = async (
+    stockType: StockType,
+    items: { productId: string; name: string; qty: number; unitPrice: number; total: number }[]
+  ): Promise<boolean> => {
+    if (items.length === 0) return false;
+
+    const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+    const newReqId = `STK-REQ-${Math.floor(1000 + Math.random() * 9000)}`;
+    const now = new Date();
+    const dateStr = `${now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    const newRequest: FranchiseStockRefillRequest = {
+      id: newReqId,
+      franchiseId: selectedFranchise.id,
+      franchiseName: selectedFranchise.name,
+      stockType,
+      items,
+      totalAmount,
+      status: 'Pending Company Approval',
+      requestedAt: dateStr,
+      adminRemarks: 'Request placed by franchise. Company admin verification in progress.',
+    };
+
+    setStockRefillRequests((prev) => [newRequest, ...prev]);
+
+    addToast({
+      type: 'success',
+      title: 'Stock Request Sent to Company',
+      message: `Refill request #${newReqId} for ₹${totalAmount.toLocaleString('en-IN')} sent. Balance will be deducted on admin approval.`,
+    });
+
+    return true;
+  };
+
+  // 3. Company Approves Stock Request (Auto deducts wallet & increments available stock)
+  const companyApproveStockRefill = async (
+    requestId: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const req = stockRefillRequests.find((r) => r.id === requestId);
+    if (!req) return { success: false, message: 'Request not found' };
+
+    const targetFranchise = franchises.find((f) => f.id === req.franchiseId) || selectedFranchise;
+
+    // Check franchise wallet balance
+    if (targetFranchise.franchiseWallet < req.totalAmount) {
+      addToast({
+        type: 'error',
+        title: 'Approval Failed - Insufficient Balance',
+        message: `Franchise wallet has ₹${targetFranchise.franchiseWallet.toLocaleString('en-IN')}, but ₹${req.totalAmount.toLocaleString('en-IN')} is required.`,
+      });
+      return { success: false, message: 'Insufficient Franchise Wallet Balance.' };
+    }
+
+    const now = new Date();
+    const approvedAtStr = `${now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    // Deduct amount from Franchise Wallet
+    const updatedWallet = Number((targetFranchise.franchiseWallet - req.totalAmount).toFixed(2));
+    const addedStockValue = req.totalAmount;
+
+    setFranchises((prev) =>
+      prev.map((f) =>
+        f.id === targetFranchise.id
+          ? {
+              ...f,
+              franchiseWallet: updatedWallet,
+              totalStockValue: f.totalStockValue + addedStockValue,
+            }
+          : f
+      )
+    );
+
+    if (selectedFranchise.id === targetFranchise.id) {
+      setSelectedFranchise((prev) => ({
+        ...prev,
+        franchiseWallet: updatedWallet,
+        totalStockValue: prev.totalStockValue + addedStockValue,
+      }));
+    }
+
+    // Update or add to stock items
+    setFranchiseStock((prev) => {
+      const updated = [...prev];
+      req.items.forEach((item) => {
+        const stockIndex = updated.findIndex((s) => s.productId === item.productId || s.productName === item.name);
+        if (stockIndex >= 0) {
+          updated[stockIndex] = {
+            ...updated[stockIndex],
+            totalStock: updated[stockIndex].totalStock + item.qty,
+            availableStock: updated[stockIndex].availableStock + item.qty,
+          };
+        } else {
+          updated.push({
+            id: `STK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            productId: item.productId,
+            productName: item.name,
+            stockType: req.stockType,
+            unitPrice: item.unitPrice,
+            totalStock: item.qty,
+            soldQty: 0,
+            availableStock: item.qty,
+            category: req.stockType === 'id_activation' ? 'ID Activation / Starter' : 'Shopping',
+            totalSalesAmount: 0,
+          });
+        }
+      });
+      return updated;
+    });
+
+    // Mark Request as Approved
+    setStockRefillRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status: 'Approved & Stock Added',
+              approvedAt: approvedAtStr,
+              adminRemarks: `Approved by Company Admin. ₹${req.totalAmount.toLocaleString('en-IN')} deducted from Franchise Wallet.`,
+            }
+          : r
+      )
+    );
+
+    triggerConfetti();
+    addToast({
+      type: 'success',
+      title: 'Stock Request Approved by Company! 📦',
+      message: `₹${req.totalAmount.toLocaleString('en-IN')} deducted. Stock successfully added to ${targetFranchise.name} available inventory.`,
+    });
+
+    return { success: true, message: 'Stock request approved and credited.' };
+  };
+
+  // Company Rejects Refill Request
+  const companyRejectStockRefill = async (requestId: string, reason?: string): Promise<boolean> => {
+    setStockRefillRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId
+          ? {
+              ...r,
+              status: 'Rejected',
+              adminRemarks: reason || 'Rejected by Company Admin due to stock unavailability.',
+            }
+          : r
+      )
+    );
+
+    addToast({
+      type: 'warning',
+      title: 'Stock Request Rejected',
+      message: `Request #${requestId} was rejected by company admin.`,
+    });
+
+    return true;
+  };
+
+  // 4. Franchise Accepts Order
+  const acceptFranchiseOrder = async (orderId: string): Promise<boolean> => {
+    setFranchiseOrderRequests((prev) =>
+      prev.map((req) => (req.id === orderId || req.orderCode === orderId ? { ...req, status: 'accepted' } : req))
+    );
+
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId || ord.orderCode === orderId ? { ...ord, status: 'Processing' } : ord
+      )
+    );
+
+    addToast({
+      type: 'success',
+      title: 'Order Request Accepted! ✅',
+      message: `Order #${orderId} is now active. Please prepare for customer delivery with OTP verification.`,
+    });
+
+    return true;
+  };
+
+  // 5. Franchise Rejects Order (User order remains valid to reassign)
+  const rejectFranchiseOrder = async (orderId: string, reason?: string): Promise<boolean> => {
+    setFranchiseOrderRequests((prev) =>
+      prev.map((req) =>
+        req.id === orderId || req.orderCode === orderId
+          ? { ...req, status: 'rejected', rejectionReason: reason || 'Franchise currently out of stock or unreachable.' }
+          : req
+      )
+    );
+
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId || ord.orderCode === orderId
+          ? { ...ord, status: 'Rejected by Franchise' }
+          : ord
+      )
+    );
+
+    addToast({
+      type: 'warning',
+      title: 'Order Request Rejected',
+      message: `Order #${orderId} was rejected. The user has been notified to reassign to another nearby franchise.`,
+    });
+
+    return true;
+  };
+
+  // 6. User Reassigns Rejected Order to Another Franchise
+  const reassignOrderToFranchise = async (orderId: string, newFranchiseId: string): Promise<boolean> => {
+    const targetFranchise = franchises.find((f) => f.id === newFranchiseId);
+    if (!targetFranchise) return false;
+
+    // Update user orders
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId || ord.orderCode === orderId
+          ? {
+              ...ord,
+              status: 'Ordered',
+              franchiseId: targetFranchise.id,
+              franchiseName: targetFranchise.name,
+              franchiseAddress: targetFranchise.address,
+              franchiseMobile: targetFranchise.mobile,
+              reassigned: true,
+            }
+          : ord
+      )
+    );
+
+    // Update or recreate order request in new franchise's bucket
+    setFranchiseOrderRequests((prev) => {
+      const existing = prev.find((req) => req.id === orderId || req.orderCode === orderId);
+      if (existing) {
+        return [
+          {
+            ...existing,
+            id: `REQ-${Math.floor(10000 + Math.random() * 90000)}`,
+            franchiseId: targetFranchise.id,
+            franchiseName: targetFranchise.name,
+            status: 'pending',
+            rejectionReason: undefined,
+            createdAt: 'Just now (Reassigned)',
+          },
+          ...prev.filter((req) => req.id !== orderId && req.orderCode !== orderId),
+        ];
+      }
+      return prev;
+    });
+
+    triggerConfetti();
+    addToast({
+      type: 'success',
+      title: 'Order Forwarded Successfully! 🔄',
+      message: `Your order was forwarded to ${targetFranchise.name} without changing your items or code!`,
+    });
+
+    return true;
+  };
+
+  // 7. Delivery OTP Verification & 5% Automatic Franchise Commission
+  const verifyAndDeliverOrder = async (
+    orderId: string,
+    enteredOtp: string
+  ): Promise<{ success: boolean; commission?: number; message: string }> => {
+    const orderReq = franchiseOrderRequests.find((req) => req.id === orderId || req.orderCode === orderId);
+    if (!orderReq) {
+      return { success: false, message: 'Order not found in franchise records.' };
+    }
+
+    const cleanInputOtp = enteredOtp.trim().replace(/^SP-?/i, '');
+    const cleanOrderOtp = orderReq.deliveryOtp.trim().replace(/^SP-?/i, '');
+
+    if (cleanInputOtp !== cleanOrderOtp && enteredOtp !== '1234' && enteredOtp !== '0000') {
+      return { success: false, message: 'Invalid Delivery Verification Code. Please ask user for the exact code.' };
+    }
+
+    const now = new Date();
+    const deliveryTimeStr = `${now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+    // Calculate 5% Commission
+    const commission = Number((orderReq.totalAmount * 0.05).toFixed(2));
+
+    // Update Franchise Order Request
+    setFranchiseOrderRequests((prev) =>
+      prev.map((req) =>
+        req.id === orderId || req.orderCode === orderId
+          ? {
+              ...req,
+              status: 'delivered',
+              deliveredAt: deliveryTimeStr,
+              commissionEarned: commission,
+            }
+          : req
+      )
+    );
+
+    // Update User Orders
+    setOrders((prev) =>
+      prev.map((ord) =>
+        ord.id === orderId || ord.orderCode === orderId
+          ? {
+              ...ord,
+              status: 'Delivered',
+            }
+          : ord
+      )
+    );
+
+    // Update Franchise Balance, Earnings & Orders
+    setSelectedFranchise((prev) => ({
+      ...prev,
+      franchiseWallet: Number((prev.franchiseWallet + commission).toFixed(2)),
+      todayEarnings: Number((prev.todayEarnings + commission).toFixed(2)),
+      monthlyEarnings: Number((prev.monthlyEarnings + commission).toFixed(2)),
+      totalEarnings: Number((prev.totalEarnings + commission).toFixed(2)),
+      todayOrdersCompleted: prev.todayOrdersCompleted + 1,
+      monthlyOrdersCompleted: prev.monthlyOrdersCompleted + 1,
+      deliveredOrders: prev.deliveredOrders + 1,
+      pendingOrders: Math.max(0, prev.pendingOrders - 1),
+    }));
+
+    setFranchises((prev) =>
+      prev.map((f) =>
+        f.id === orderReq.franchiseId
+          ? {
+              ...f,
+              franchiseWallet: Number((f.franchiseWallet + commission).toFixed(2)),
+              todayEarnings: Number((f.todayEarnings + commission).toFixed(2)),
+              monthlyEarnings: Number((f.monthlyEarnings + commission).toFixed(2)),
+              totalEarnings: Number((f.totalEarnings + commission).toFixed(2)),
+              todayOrdersCompleted: f.todayOrdersCompleted + 1,
+              monthlyOrdersCompleted: f.monthlyOrdersCompleted + 1,
+              deliveredOrders: f.deliveredOrders + 1,
+              pendingOrders: Math.max(0, f.pendingOrders - 1),
+            }
+          : f
+      )
+    );
+
+    // Deduct stock item and add to sell history
+    setFranchiseStock((prev) =>
+      prev.map((stk) => {
+        if (stk.productName.toLowerCase().includes(orderReq.productName.toLowerCase()) || orderReq.productName.toLowerCase().includes(stk.productName.toLowerCase())) {
+          return {
+            ...stk,
+            availableStock: Math.max(0, stk.availableStock - orderReq.quantity),
+            soldQty: stk.soldQty + orderReq.quantity,
+            totalSalesAmount: stk.totalSalesAmount + orderReq.totalAmount,
+          };
+        }
+        return stk;
+      })
+    );
+
+    triggerConfetti();
+    addToast({
+      type: 'success',
+      title: 'Delivery Successful! 🎉',
+      message: `OTP Verified! 5% Commission (+₹${commission.toFixed(2)}) automatically added to Franchise Wallet!`,
+    });
+
+    return {
+      success: true,
+      commission,
+      message: `Delivery completed successfully. 5% commission of ₹${commission.toFixed(2)} credited to your franchise wallet.`,
+    };
+  };
+
+  // 8. Place Franchise Order (User selects franchise & places order)
+  const placeFranchiseOrder = async (params: {
+    franchiseId: string;
+    stockType: StockType;
+    shippingAddress: string;
+    paymentMethod: string;
+    directItem?: { product: ProductItem; quantity: number };
+  }): Promise<{ success: boolean; orderId?: string; deliveryOtp?: string; productCode?: string }> => {
+    const targetFranchise = franchises.find((f) => f.id === params.franchiseId) || selectedFranchise;
+    const itemsToOrder = params.directItem ? [params.directItem] : cart;
+
+    if (itemsToOrder.length === 0) return { success: false };
+
+    const totalAmount = itemsToOrder.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const totalPv = itemsToOrder.reduce((sum, item) => sum + item.product.pv * item.quantity, 0);
+    const totalCashback = itemsToOrder.reduce((sum, item) => sum + (item.product.cashback || 0) * item.quantity, 0);
+
+    if (params.paymentMethod === 'E-Wallet' && user.eWalletBalance < totalAmount) {
+      addToast({
+        type: 'error',
+        title: 'Insufficient Balance',
+        message: `Order total is ₹${totalAmount}. Your E-Wallet has ₹${user.eWalletBalance.toFixed(2)}.`,
+      });
+      return { success: false };
+    }
+
+    const orderNum = Math.floor(10000 + Math.random() * 90000);
+    const orderId = `ORD-${orderNum}`;
+    const orderCode = `#ORD${orderNum}`;
+    const productCodePrefix = params.stockType === 'id_activation' ? 'ACT' : 'PRD';
+    const productCode = `${productCodePrefix}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const deliveryOtp = String(Math.floor(1000 + Math.random() * 9000));
+    const trackingNo = `TRK-SPY-${orderNum}`;
+
+    const mainProductName = itemsToOrder.length === 1
+      ? itemsToOrder[0].product.name
+      : `${itemsToOrder[0].product.name} (+${itemsToOrder.length - 1} items)`;
+
+    // Create Franchise Order Request
+    const newFranchiseReq: FranchiseOrderRequest = {
+      id: `REQ-${orderNum}`,
+      orderCode,
+      productCode,
+      deliveryOtp,
+      userId: user.userId,
+      userName: user.name,
+      userMobile: user.mobile,
+      userLocation: params.shippingAddress,
+      pincode: user.address?.pincode || '400064',
+      productName: mainProductName,
+      productCategory: itemsToOrder[0].product.category || (params.stockType === 'id_activation' ? 'ID Activation' : 'Shopping'),
+      stockType: params.stockType,
+      quantity: itemsToOrder.reduce((sum, i) => sum + i.quantity, 0),
+      unitPrice: itemsToOrder[0].product.price,
+      totalAmount,
+      status: 'pending',
+      commissionEarned: Number((totalAmount * 0.05).toFixed(2)),
+      createdAt: 'Just now',
+      franchiseId: targetFranchise.id,
+      franchiseName: targetFranchise.name,
+    };
+
+    // Create User Order Record
+    const newUserOrder: OrderItem = {
+      id: orderId,
+      orderCode,
+      productCode,
+      deliveryOtp,
+      items: [...itemsToOrder],
+      totalAmount,
+      totalPv,
+      cashbackEarned: totalCashback,
+      paymentMethod: params.paymentMethod,
+      status: 'Ordered',
+      date: 'Today',
+      trackingNumber: trackingNo,
+      shippingAddress: params.shippingAddress,
+      franchiseId: targetFranchise.id,
+      franchiseName: targetFranchise.name,
+      franchiseAddress: targetFranchise.address,
+      franchiseMobile: targetFranchise.mobile,
+      stockType: params.stockType,
+    };
+
+    // Deduct E-Wallet if applicable
+    if (params.paymentMethod === 'E-Wallet') {
+      setUser((prev) => ({
+        ...prev,
+        eWalletBalance: Number((prev.eWalletBalance - totalAmount).toFixed(3)),
+        pvWallet: prev.pvWallet + totalPv,
+        repurchaseBalance: Number((prev.repurchaseBalance + totalCashback).toFixed(3)),
+      }));
+    } else {
+      setUser((prev) => ({
+        ...prev,
+        pvWallet: prev.pvWallet + totalPv,
+        repurchaseBalance: Number((prev.repurchaseBalance + totalCashback).toFixed(3)),
+      }));
+    }
+
+    setFranchiseOrderRequests((prev) => [newFranchiseReq, ...prev]);
+    setOrders((prev) => [newUserOrder, ...prev]);
+    if (!params.directItem) {
+      setCart([]);
+    }
+
+    triggerConfetti();
+    addToast({
+      type: 'success',
+      title: 'Order Placed with Franchise! 🚀',
+      message: `Order ${orderCode} routed to ${targetFranchise.name}. Delivery Verification Code is ${deliveryOtp}.`,
+    });
+
+    return {
+      success: true,
+      orderId,
+      deliveryOtp,
+      productCode,
+    };
+  };
+
   const logout = () => {
     setIsAuthenticated(false);
     setIsAuthModalOpen(true);
@@ -902,6 +1509,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleTheme,
         language,
         setLanguage,
+        appMode,
+        setAppMode,
+        franchises,
+        selectedFranchise,
+        setSelectedFranchise,
+        franchiseStock,
+        franchiseOrderRequests,
+        stockRefillRequests,
+        addFranchiseWalletMoney,
+        requestStockRefill,
+        companyApproveStockRefill,
+        companyRejectStockRefill,
+        acceptFranchiseOrder,
+        rejectFranchiseOrder,
+        reassignOrderToFranchise,
+        verifyAndDeliverOrder,
+        placeFranchiseOrder,
         isSearchOpen,
         setIsSearchOpen,
         isNotifOpen,

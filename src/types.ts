@@ -212,16 +212,112 @@ export interface CartItem {
 
 export interface OrderItem {
   id: string;
+  orderCode?: string;
+  productCode?: string;
+  deliveryOtp?: string;
   items: CartItem[];
   totalAmount: number;
   totalPv: number;
   cashbackEarned: number;
   paymentMethod: string;
-  status: 'Ordered' | 'Confirmed' | 'Processing' | 'Shipped' | 'Out for Delivery' | 'Delivered' | 'Cancelled';
+  status: 'Ordered' | 'Confirmed' | 'Processing' | 'Shipped' | 'Out for Delivery' | 'Delivered' | 'Cancelled' | 'Rejected by Franchise';
   date: string;
   trackingNumber: string;
   shippingAddress: string;
+  franchiseId?: string;
   franchiseName: string;
+  franchiseMobile?: string;
+  franchiseAddress?: string;
+  stockType?: 'id_activation' | 'shopping';
+  reassigned?: boolean;
+}
+
+export type StockType = 'id_activation' | 'shopping';
+
+export interface FranchiseInfo {
+  id: string;
+  name: string;
+  ownerName: string;
+  userId: string;
+  mobile: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  status: 'Active' | 'Inactive' | 'Pending Verification';
+  rating: number;
+  distanceKm?: number;
+  franchiseWallet: number;
+  todayEarnings: number;
+  monthlyEarnings: number;
+  totalEarnings: number;
+  todayOrdersCompleted: number;
+  monthlyOrdersCompleted: number;
+  totalStockValue: number;
+  totalOrders: number;
+  pendingOrders: number;
+  deliveredOrders: number;
+  commissionRate: number; // 5% = 0.05
+}
+
+export interface FranchiseStockItem {
+  id: string;
+  productId: string;
+  productName: string;
+  stockType: StockType;
+  unitPrice: number;
+  totalStock: number;
+  soldQty: number;
+  availableStock: number;
+  icon?: string;
+  category: string;
+  totalSalesAmount: number;
+}
+
+export interface FranchiseOrderRequest {
+  id: string;
+  orderCode: string;
+  productCode: string;
+  deliveryOtp: string;
+  userId: string;
+  userName: string;
+  userMobile: string;
+  userLocation: string;
+  pincode: string;
+  productName: string;
+  productCategory: string;
+  stockType: StockType;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  status: 'pending' | 'accepted' | 'out_for_delivery' | 'delivered' | 'rejected';
+  reassignedFranchiseId?: string;
+  commissionEarned: number; // 5%
+  createdAt: string;
+  deliveredAt?: string;
+  rejectionReason?: string;
+  franchiseId: string;
+  franchiseName: string;
+}
+
+export interface FranchiseStockRefillRequest {
+  id: string;
+  franchiseId: string;
+  franchiseName: string;
+  stockType: StockType;
+  items: {
+    productId: string;
+    name: string;
+    qty: number;
+    unitPrice: number;
+    total: number;
+  }[];
+  totalAmount: number;
+  status: 'Pending Company Approval' | 'Approved & Stock Added' | 'Rejected';
+  requestedAt: string;
+  approvedAt?: string;
+  adminRemarks?: string;
 }
 
 export interface BankAccount {

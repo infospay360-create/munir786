@@ -14,14 +14,24 @@ import {
   ShoppingBag,
   ArrowUpRight,
   ShieldAlert,
+  Store,
 } from 'lucide-react';
 import { useApp, ActiveTab } from '../../context/AppContext';
 
 export const Sidebar: React.FC = () => {
-  const { activeTab, setActiveTab, setIsShareOpen, logout } = useApp();
+  const { activeTab, setActiveTab, setIsShareOpen, logout, franchiseOrderRequests } = useApp();
 
-  const navItems: { id: ActiveTab; label: string; icon: React.ReactNode }[] = [
+  const pendingFranchiseOrders = franchiseOrderRequests.filter((r) => r.status === 'pending').length;
+
+  const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: string | number }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+    {
+      id: 'franchise_portal',
+      label: 'Franchise Portal',
+      icon: <Store className="h-5 w-5 text-amber-400" />,
+      badge: pendingFranchiseOrders > 0 ? pendingFranchiseOrders : undefined,
+    },
+    { id: 'repurchase_mall', label: 'Repurchase Mall', icon: <ShoppingBag className="h-5 w-5" /> },
     { id: 'recharge', label: 'Recharge', icon: <Smartphone className="h-5 w-5" /> },
     { id: 'add_money', label: 'Add Money', icon: <WalletCards className="h-5 w-5" /> },
     { id: 'passbook', label: 'Passbook', icon: <BookOpen className="h-5 w-5" /> },
@@ -29,7 +39,6 @@ export const Sidebar: React.FC = () => {
     { id: 'fund_history', label: 'Fund History', icon: <History className="h-5 w-5" /> },
     { id: 'support_ticket', label: 'Support Ticket', icon: <LifeBuoy className="h-5 w-5" /> },
     { id: 'my_team', label: 'My Team', icon: <Users className="h-5 w-5" /> },
-    { id: 'repurchase_mall', label: 'Repurchase Mall', icon: <ShoppingBag className="h-5 w-5" /> },
     { id: 'reports', label: 'Reports', icon: <FileBarChart className="h-5 w-5" /> },
     { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
     { id: 'admin_panel', label: 'Admin Console', icon: <ShieldAlert className="h-5 w-5 text-purple-400" /> },
@@ -58,7 +67,12 @@ export const Sidebar: React.FC = () => {
               >
                 {item.icon}
               </div>
-              <span className="truncate">{item.label}</span>
+              <span className="truncate flex-1 text-left">{item.label}</span>
+              {item.badge && (
+                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                  {item.badge}
+                </span>
+              )}
             </button>
           );
         })}
